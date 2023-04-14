@@ -10,6 +10,7 @@
   - graphvix
   - doxygen
   - swig
+  
 - python-fuse
 
 ## Build

@@ -29,27 +29,110 @@ class MMSServer:
         return self.con is not None
 
     def _assert_connected(self):
-        if not self.connected(): raise ConnectionError('')
+        if not self.connected():
+            raise ConnectionError('Not connected')
+
+    def _linked_list_iterator(self, linked_list):
+        node = iec61850.LinkedList_getNext(linked_list)
+
+        while node:
+            yield iec61850.toCharP(node.data)
+            node = iec61850.LinkedList_getNext(node)
+
+        iec61850.LinkedList_destroy(linked_list)
 
     def logical_device_iterator(self):
         self._assert_connected()
 
-        deviceList, error = iec61850.IedConnection_getLogicalDeviceList(self.con)
-        print(error)
+        devices, error = iec61850.IedConnection_getLogicalDeviceList(self.con)
 
-        device = iec61850.LinkedList_getNext(deviceList)
+        if error != 0:
+            raise ConnectionError('Logical device error')
 
-        while device:
-            yield device
+        return self._linked_list_iterator(devices)
 
-            device = iec61850.LinkedList_getNext(device)
+    def logical_nodes_iterator(self, logical_device):
+        self._assert_connected()
 
-        iec61850.LinkedList_destroy(deviceList)
+        nodes, err = iec61850.IedConnection_getLogicalDeviceDirectory(
+            self.con, logical_device
+        )
+
+        if err != 0:
+            raise ConnectionError('Logical node error')
+
+        return self._linked_list_iterator(nodes)
+
+    def data_objects_iterator(self, logical_device, logical_node):
+        self._assert_connected()
+
+        objs, err = iec61850.IedConnection_getLogicalNodeDirectory(
+            self.con,
+            f'{logical_device}/{logical_node}',
+            iec61850.ACSI_CLASS_DATA_OBJECT
+        )
+        
+        if err != 0:
+            raise ConnectionError('Data object error')
+
+        return self._linked_list_iterator(objs)
+
+    def data_attribute_iterator(self, logical_device, logical_node, data_object):
+        self._assert_connected()
+
+        attrs, err = iec61850.IedConnection_getDataDirectory(
+            self.con,
+            f'{logical_device}/{logical_node}.{data_object}'
+        )
+
+        if err != 0:
+            raise ConnectionError('Data attribute error')
+
+        return self._linked_list_iterator(attrs)
+
+    def tree(self):
+        return {
+            device: {
+                node: {
+                    obj: [
+                        attr
+                        for attr in server.data_attribute_iterator(device, node, obj)
+                    ]
+                    for obj in self.data_objects_iterator(device, node)
+                }
+                for node in self.logical_nodes_iterator(device)
+            }
+            for device in self.logical_device_iterator()
+        }
+
+    def print_tree(self):
+        tree = self.tree()
+
+        for device, nodes in tree.items():
+            print(f'LD: {device}')
+            for node, objs in nodes.items():
+                print(f'  LN: {node}')
+                for obj, attrs in objs.items():
+                    print(f'    DO: {obj}')
+                    for attr in attrs:
+                        print(f'      DA: {attr}')
+
+    def read_object(
+            self,
+            logical_device,
+            logical_node,
+            data_object,
+            data_attribute
+    ):
+        obj, err = iec61850.IedConnection_readObject(
+            self.con,
+            '',
+            
+        )
 
 if __name__ == '__main__':
+    from pprint import pprint
     server = MMSServer()
     server.connect()
-    devices = [*server.logical_device_iterator()]
-    for device in devices:
-        print("LD: %s" % iec61850.toCharP(device.data))
+    server.print_tree()
     server.disconnect()
