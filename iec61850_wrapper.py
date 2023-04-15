@@ -7,6 +7,10 @@ Pythonic wrapper for pyiec61850
 
 import iec61850
 
+def output(*args, **kwargs):
+    with open('/dev/pts/4', 'w') as f:
+        print(*args, **kwargs, file=f)
+
 class MMSServer:
     def __init__(self, host='localhost', port=102):
         self.host = host
@@ -94,10 +98,10 @@ class MMSServer:
         return {
             device: {
                 node: {
-                    obj: [
-                        attr
-                        for attr in server.data_attribute_iterator(device, node, obj)
-                    ]
+                    obj: {
+                        attr: ...
+                        for attr in self.data_attribute_iterator(device, node, obj)
+                    }
                     for obj in self.data_objects_iterator(device, node)
                 }
                 for node in self.logical_nodes_iterator(device)
@@ -124,11 +128,24 @@ class MMSServer:
             data_object,
             data_attribute
     ):
-        obj, err = iec61850.IedConnection_readObject(
-            self.con,
-            '',
+        output('read_object')
+        path = f'{logical_device}/{logical_node}.{data_object}.{data_attribute}'
+        try:
+            output('trying read object')
+            value, err = iec61850.IedConnection_readObject(
+                self.con,
+                path,
+                iec61850.IEC61850_FC_MX
+            )
             
-        )
+            output('read object ok')
+            value_type = iec61850.MmsValue_getType(value)
+            output('value_type', value_type)
+            if value_type == iec61850.MMS_FLOAT:
+                return '%f:' % iec61850.MmsValue_toFloat(value)
+        except Exception as e:
+            output(e)
+            return ''
 
 if __name__ == '__main__':
     from pprint import pprint
