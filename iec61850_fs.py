@@ -7,14 +7,17 @@ from time import time
 # import logging
 
 from os import path as pth, sep
+import os
 from iec61850_wrapper import MMSServer
 
 # logging.basicConfig(filename='/dev/pts/4', encoding='utf-8', level=logging.INFO)
 
 fuse.fuse_python_api = (0, 2)
 
+hello_str = b'minha terra tem palmeiras onde canta o sabia\n'
+
 def output(*args, **kwargs):
-    with open('/dev/pts/4', 'w') as f:
+    with open('/dev/pts/1', 'w') as f:
         print(*args, **kwargs, file=f)
 
 def dict_find(d, path):
@@ -97,30 +100,44 @@ class Iec61850FS(fuse.Fuse):
         st.st_nlink = 1
         st.st_mode = stat.S_IFREG | 0o666
 
+        try:
+            obj = self.server.read_object(*pth.normpath(path).split(sep)[1:])
+        except Exception as e:
+            output(e)
+
+        st.st_size = len(obj)
+
         output('xablau')
         return st
 
-    # def read(self, path, size, offset):
-    #     output('AAA', path)
-    #     path = pth.normpath(path)
-    #     output('BBB', path)
-    #     path = path.split(sep)[1:]
-    #     output('CCC', path)
+    # def open(self, path, flags):
+    #     accmode = os.O_RDONLY | os.O_WRONLY | os.O_RDWR
+    #     if (flags & accmode) != os.O_RDONLY:
+    #         return -errno.EACCES
 
-    #     try:
-    #         obj = self.server.read_object(*path)
-    #     except Exception as e:
-    #         output(e)
+    def read(self, path, size, offset):
+        output('AAA', path)
+        path = pth.normpath(path)
+        output('BBB', path)
+        path = path.split(sep)[1:]
+        output('CCC', path)
 
-    #     output('DDD', obj)
-    #     slen = len(obj)
-    #     output('EEE', slen)
-    #     if offset < slen:
-    #         if offset + size > slen:
-    #             size = slen - offset
-    #         buf = obj[offset:offset+size]
-    #     else:
-    #         buf = b''
-    #     output('FFF', str(buf))
-    #     return buf
+        try:
+            obj = bytes(self.server.read_object(*path), 'utf-8')
+        except Exception as e:
+            output(e)
+
+        # obj = hello_str
+
+        output('DDD', obj)
+        slen = len(obj)
+        output('EEE', slen)
+        if offset < slen:
+            if offset + size > slen:
+                size = slen - offset
+            buf = obj[offset:offset+size]
+        else:
+            buf = b''
+        output('FFF', str(buf))
+        return buf
 
