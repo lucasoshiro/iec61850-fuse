@@ -8,10 +8,30 @@ Pythonic wrapper for pyiec61850
 import iec61850
 
 def output(*args, **kwargs):
-    with open('/dev/pts/4', 'w') as f:
+    with open('/dev/pts/1', 'w') as f:
         print(*args, **kwargs, file=f)
 
 class MMSServer:
+    converters = {
+        iec61850.MMS_ARRAY: None,
+        iec61850.MMS_STRUCTURE: None,
+        iec61850.MMS_BOOLEAN: None,
+        iec61850.MMS_BIT_STRING: None,
+        iec61850.MMS_INTEGER: iec61850.MmsValue_toUint32,
+        iec61850.MMS_UNSIGNED: None,
+        iec61850.MMS_FLOAT: iec61850.MmsValue_toFloat,
+        iec61850.MMS_OCTET_STRING: None,
+        iec61850.MMS_VISIBLE_STRING: None,
+        iec61850.MMS_GENERALIZED_TIME: None,
+        iec61850.MMS_BINARY_TIME: None,
+        iec61850.MMS_BCD: None,
+        iec61850.MMS_OBJ_ID: None,
+        iec61850.MMS_STRING: iec61850.MmsValue_toString,
+        iec61850.MMS_UTC_TIME: iec61850.MmsValue_toUnixTimestamp,
+        iec61850.MMS_DATA_ACCESS_ERROR: None
+    }
+
+
     def __init__(self, host='localhost', port=102):
         self.host = host
         self.port = port
@@ -24,11 +44,11 @@ class MMSServer:
         if error != iec61850.IED_ERROR_OK:
             iec61850.IedConnection_destroy(self.con)
             raise ConnectionError(f'IED error {error}')
-        
+
     def disconnect(self):
         iec61850.IedConnection_close(self.con)
         self.con = None
-    
+
     def connected(self):
         return self.con is not None
 
@@ -75,7 +95,7 @@ class MMSServer:
             f'{logical_device}/{logical_node}',
             iec61850.ACSI_CLASS_DATA_OBJECT
         )
-        
+
         if err != 0:
             raise ConnectionError('Data object error')
 
@@ -121,35 +141,30 @@ class MMSServer:
                     for attr in attrs:
                         print(f'      DA: {attr}')
 
-    def read_object(
+    def _get_converter(
             self,
             logical_device,
             logical_node,
             data_object,
-            data_attribute
+            *data_attributes
     ):
-        output('read_object')
-        path = f'{logical_device}/{logical_node}.{data_object}.{data_attribute}'
-        try:
-            output('trying read object')
-            value, err = iec61850.IedConnection_readObject(
-                self.con,
-                path,
-                iec61850.IEC61850_FC_MX
-            )
-            
-            output('read object ok')
-            value_type = iec61850.MmsValue_getType(value)
-            output('value_type', value_type)
-            if value_type == iec61850.MMS_FLOAT:
-                return '%f:' % iec61850.MmsValue_toFloat(value)
-        except Exception as e:
-            output(e)
-            return ''
+        data_attributes = '.'.join(data_attributes)
+        path = f'{logical_device}/{logical_node}.{data_object}.{data_attributes}'
+
+        value, err = iec61850.IedConnection_readObject(
+            self.con,
+            path,
+            iec61850.IEC61850_FC_MX
+        )
+
+        value_type = iec61850.MmsValue_getType(value)
+        return self.converters.get(value_type)
+
 
 if __name__ == '__main__':
     from pprint import pprint
     server = MMSServer()
     server.connect()
-    server.print_tree()
+    conv = server._get_converter('simpleIOGenericIO', 'GGIO1', 'AnIn1', 'mag', 'f')
+    print(conv)
     server.disconnect()
