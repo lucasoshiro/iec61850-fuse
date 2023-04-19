@@ -44,11 +44,11 @@ class MMSServer:
         if error != iec61850.IED_ERROR_OK:
             iec61850.IedConnection_destroy(self.con)
             raise ConnectionError(f'IED error {error}')
-
+        
     def disconnect(self):
         iec61850.IedConnection_close(self.con)
         self.con = None
-
+    
     def connected(self):
         return self.con is not None
 
@@ -95,7 +95,7 @@ class MMSServer:
             f'{logical_device}/{logical_node}',
             iec61850.ACSI_CLASS_DATA_OBJECT
         )
-
+        
         if err != 0:
             raise ConnectionError('Data object error')
 
@@ -141,7 +141,7 @@ class MMSServer:
                     for attr in attrs:
                         print(f'      DA: {attr}')
 
-    def _get_converter(
+    def _get_value(
             self,
             logical_device,
             logical_node,
@@ -154,17 +154,40 @@ class MMSServer:
         value, err = iec61850.IedConnection_readObject(
             self.con,
             path,
-            iec61850.IEC61850_FC_MX
+            iec61850.IEC61850_FC_MX            
         )
 
-        value_type = iec61850.MmsValue_getType(value)
+        return value
+
+    def _get_converter(self, mms_value):
+        value_type = iec61850.MmsValue_getType(mms_value)
         return self.converters.get(value_type)
 
+    def read_value(
+            self,
+            logical_device,
+            logical_node,
+            data_object,
+            *data_attributes
+    ):
+      value = self._get_value(
+          logical_device,
+          logical_node,
+          data_object,
+          *data_attributes
+      )
+
+      conv = self._get_converter(value)
+
+      if conv is None:
+          return None
+
+      return conv(value)
 
 if __name__ == '__main__':
     from pprint import pprint
     server = MMSServer()
     server.connect()
-    conv = server._get_converter('simpleIOGenericIO', 'GGIO1', 'AnIn1', 'mag', 'f')
-    print(conv)
+    print(server.read_value('simpleIOGenericIO', 'GGIO1', 'AnIn1', 'mag', 'f'))
+    print(server.read_value('simpleIOGenericIO', 'GGIO1', 'AnIn1', 'mag', 't'))
     server.disconnect()
