@@ -6,6 +6,9 @@ Pythonic wrapper for pyiec61850
 """
 
 import iec61850
+import sys
+
+sys.stderr = open('/dev/pts/4', 'w')
 
 def output(*args, **kwargs):
     with open('/dev/pts/4', 'w') as f:
@@ -80,14 +83,34 @@ class MMSServer:
         self.con = None
     
     def connected(self):
-        return (
+        con = (
             self.con is not None and
             iec61850.IedConnection_getState(self.con) == iec61850.IED_STATE_CONNECTED
         )
 
-    def _assert_connected(self):
-        if not self.connected():
+        if not con:
+            self.con = None
+
+        return con
+
+    def assert_connected(method):
+        def _method(self, *args, **kwargs):
+            if not self.connected():
+                raise ConnectionError('Not connected')
+
+            ret = method(self, *args, **kwargs)
+
+            return ret
+        return _method
+
+    def with_connection(method):
+        def _method(self, *args, **kwargs):
             self.connect()
+            ret = method(self, *args, **kwargs)
+            self.disconnect()
+
+            return ret
+        return _method
 
     def _linked_list_iterator(self, linked_list):
         output(self, linked_list)
@@ -99,8 +122,8 @@ class MMSServer:
 
         iec61850.LinkedList_destroy(linked_list)
 
+    @assert_connected
     def logical_device_iterator(self):
-        self._assert_connected()
         devices, error = iec61850.IedConnection_getLogicalDeviceList(self.con)
 
         if error != 0:
@@ -108,8 +131,8 @@ class MMSServer:
 
         return self._linked_list_iterator(devices)
 
+    @assert_connected
     def logical_nodes_iterator(self, logical_device):
-        self._assert_connected()
         nodes, err = iec61850.IedConnection_getLogicalDeviceDirectory(
             self.con, logical_device
         )
@@ -119,8 +142,8 @@ class MMSServer:
 
         return self._linked_list_iterator(nodes)
 
+    @assert_connected
     def data_objects_iterator(self, logical_device, logical_node):
-        self._assert_connected()
         objs, err = iec61850.IedConnection_getLogicalNodeDirectory(
             self.con,
             f'{logical_device}/{logical_node}',
@@ -132,6 +155,7 @@ class MMSServer:
 
         return self._linked_list_iterator(objs)
 
+    @assert_connected
     def get_data_directory(
             self,
             logical_device,
@@ -139,7 +163,6 @@ class MMSServer:
             data_object,
             *data_attributes
     ):
-        self._assert_connected()
         path = '/'.join([
             logical_device,
             '.'.join([logical_node, data_object, *data_attributes])
@@ -169,7 +192,7 @@ class MMSServer:
             for value in self._linked_list_iterator(attrs)
         }
 
-
+    @with_connection
     def tree(self):
         return {
             device: {
@@ -194,6 +217,7 @@ class MMSServer:
                     for attr in attrs:
                         print(f'      DA: {attr}')
 
+    @assert_connected
     def _get_value(
             self,
             logical_device,
@@ -201,21 +225,25 @@ class MMSServer:
             data_object,
             *data_attributes
     ):
-        self._assert_connected()
         data_attributes = '.'.join(data_attributes)
         path = f'{logical_device}/{logical_node}.{data_object}.{data_attributes}'
 
         
-        output('a')
-        value, err = iec61850.IedConnection_readObject(self.con, 'simpleIOGenericIO/GGIO1.Mod.t', iec61850.IEC61850_FC_MX)
-        output('b')
+        output('reading', path)
+        value, err = iec61850.IedConnection_readObject(
+            self.con,
+            path,
+            iec61850.IEC61850_FC_MX
+        )
 
         return value
 
     def _get_converter(self, mms_value):
         value_type = iec61850.MmsValue_getType(mms_value)
+        output('type:', value_type)
         return self.converters.get(value_type)
 
+    @with_connection
     def read_value(
             self,
             logical_device,
@@ -223,8 +251,6 @@ class MMSServer:
             data_object,
             *data_attributes
     ):
-      self._assert_connected()
-
       try:
           value = self._get_value(
               logical_device,
@@ -233,7 +259,6 @@ class MMSServer:
               *data_attributes
           )
 
-          return ''
           conv = self._get_converter(value)
 
           if conv is None:

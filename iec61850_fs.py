@@ -9,6 +9,7 @@ import os
 from iec61850_wrapper import MMSServer
 import iec61850
 import sys
+import errno
 
 sys.stderr = open('/dev/pts/4', 'w')
 
@@ -89,7 +90,9 @@ class Iec61850FS(fuse.Fuse):
         st.st_nlink = 1
         st.st_mode = stat.S_IFREG | 0o666
 
-        obj = '' #bytes(self.server.read_value(*pth.normpath(path).split(sep)[1:]), 'utf-8')
+        path = pth.normpath(path).split(sep)[1:]
+
+        obj = bytes(str(self.server.read_value(*path)), 'utf-8')
 
         st.st_size = len(obj)
         # output('len1: ', st.st_size)
@@ -102,10 +105,10 @@ class Iec61850FS(fuse.Fuse):
     #         return -errno.EACCES
 
     def read(self, path, size, offset):
-        path = pth.normpath(path)
-        path = path.split(sep)[1:]
+        output('read')
+        path = pth.normpath(path).split(sep)[1:]
 
-        obj = '' #bytes(self.server.read_value(*path), 'utf-8')
+        obj = bytes(str(self.server.read_value(*path)), 'utf-8')
         slen = len(obj)
 
         if offset < slen:
