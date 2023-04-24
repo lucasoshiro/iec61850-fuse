@@ -31,6 +31,36 @@ class MMSServer:
         iec61850.MMS_DATA_ACCESS_ERROR: None
     }
 
+    ied_error = {
+        iec61850.IED_ERROR_OK: 'IED_ERROR_OK',
+        iec61850.IED_ERROR_NOT_CONNECTED: 'IED_ERROR_NOT_CONNECTED',
+        iec61850.IED_ERROR_ALREADY_CONNECTED: 'IED_ERROR_ALREADY_CONNECTED',
+        iec61850.IED_ERROR_CONNECTION_LOST: 'IED_ERROR_CONNECTION_LOST',
+        iec61850.IED_ERROR_SERVICE_NOT_SUPPORTED: 'IED_ERROR_SERVICE_NOT_SUPPORTED',
+        iec61850.IED_ERROR_CONNECTION_REJECTED: 'IED_ERROR_CONNECTION_REJECTED',
+        iec61850.IED_ERROR_OUTSTANDING_CALL_LIMIT_REACHED: 'IED_ERROR_OUTSTANDING_CALL_LIMIT_REACHED',
+        iec61850.IED_ERROR_USER_PROVIDED_INVALID_ARGUMENT: 'IED_ERROR_USER_PROVIDED_INVALID_ARGUMENT',
+        iec61850.IED_ERROR_ENABLE_REPORT_FAILED_DATASET_MISMATCH: 'IED_ERROR_ENABLE_REPORT_FAILED_DATASET_MISMATCH',
+        iec61850.IED_ERROR_OBJECT_REFERENCE_INVALID: 'IED_ERROR_OBJECT_REFERENCE_INVALID',
+        iec61850.IED_ERROR_UNEXPECTED_VALUE_RECEIVED: 'IED_ERROR_UNEXPECTED_VALUE_RECEIVED',
+        iec61850.IED_ERROR_TIMEOUT: 'IED_ERROR_TIMEOUT',
+        iec61850.IED_ERROR_ACCESS_DENIED: 'IED_ERROR_ACCESS_DENIED',
+        iec61850.IED_ERROR_OBJECT_DOES_NOT_EXIST: 'IED_ERROR_OBJECT_DOES_NOT_EXIST',
+        iec61850.IED_ERROR_OBJECT_EXISTS: 'IED_ERROR_OBJECT_EXISTS',
+        iec61850.IED_ERROR_OBJECT_ACCESS_UNSUPPORTED: 'IED_ERROR_OBJECT_ACCESS_UNSUPPORTED',
+        iec61850.IED_ERROR_TYPE_INCONSISTENT: 'IED_ERROR_TYPE_INCONSISTENT',
+        iec61850.IED_ERROR_TEMPORARILY_UNAVAILABLE: 'IED_ERROR_TEMPORARILY_UNAVAILABLE',
+        iec61850.IED_ERROR_OBJECT_UNDEFINED: 'IED_ERROR_OBJECT_UNDEFINED',
+        iec61850.IED_ERROR_INVALID_ADDRESS: 'IED_ERROR_INVALID_ADDRESS',
+        iec61850.IED_ERROR_HARDWARE_FAULT: 'IED_ERROR_HARDWARE_FAULT',
+        iec61850.IED_ERROR_TYPE_UNSUPPORTED: 'IED_ERROR_TYPE_UNSUPPORTED',
+        iec61850.IED_ERROR_OBJECT_ATTRIBUTE_INCONSISTENT: 'IED_ERROR_OBJECT_ATTRIBUTE_INCONSISTENT',
+        iec61850.IED_ERROR_OBJECT_VALUE_INVALID: 'IED_ERROR_OBJECT_VALUE_INVALID',
+        iec61850.IED_ERROR_OBJECT_INVALIDATED: 'IED_ERROR_OBJECT_INVALIDATED',
+        iec61850.IED_ERROR_MALFORMED_MESSAGE: 'IED_ERROR_MALFORMED_MESSAGE',
+        iec61850.IED_ERROR_SERVICE_NOT_IMPLEMENTED: 'IED_ERROR_SERVICE_NOT_IMPLEMENTED',
+        iec61850.IED_ERROR_UNKNOWN: 'IED_ERROR_UNKNOWN'
+    }
 
     def __init__(self, host='localhost', port=102):
         self.host = host
@@ -43,20 +73,24 @@ class MMSServer:
 
         if error != iec61850.IED_ERROR_OK:
             iec61850.IedConnection_destroy(self.con)
-            raise ConnectionError(f'IED error {error}')
+            raise ConnectionError(f'IED error {self.ied_error[error]}')
         
     def disconnect(self):
         iec61850.IedConnection_close(self.con)
         self.con = None
     
     def connected(self):
-        return self.con is not None
+        return (
+            self.con is not None and
+            iec61850.IedConnection_getState(self.con) == iec61850.IED_STATE_CONNECTED
+        )
 
     def _assert_connected(self):
         if not self.connected():
-            raise ConnectionError('Not connected')
+            self.connect()
 
     def _linked_list_iterator(self, linked_list):
+        output(self, linked_list)
         node = iec61850.LinkedList_getNext(linked_list)
 
         while node:
@@ -67,7 +101,6 @@ class MMSServer:
 
     def logical_device_iterator(self):
         self._assert_connected()
-
         devices, error = iec61850.IedConnection_getLogicalDeviceList(self.con)
 
         if error != 0:
@@ -77,7 +110,6 @@ class MMSServer:
 
     def logical_nodes_iterator(self, logical_device):
         self._assert_connected()
-
         nodes, err = iec61850.IedConnection_getLogicalDeviceDirectory(
             self.con, logical_device
         )
@@ -89,7 +121,6 @@ class MMSServer:
 
     def data_objects_iterator(self, logical_device, logical_node):
         self._assert_connected()
-
         objs, err = iec61850.IedConnection_getLogicalNodeDirectory(
             self.con,
             f'{logical_device}/{logical_node}',
@@ -108,18 +139,17 @@ class MMSServer:
             data_object,
             *data_attributes
     ):
+        self._assert_connected()
         path = '/'.join([
             logical_device,
             '.'.join([logical_node, data_object, *data_attributes])
         ])
-
 
         attrs, err = iec61850.IedConnection_getDataDirectory(
             self.con,
             path
         )
 
-        output(path, attrs, err)
         if attrs is None:
             return None
 
@@ -171,14 +201,14 @@ class MMSServer:
             data_object,
             *data_attributes
     ):
+        self._assert_connected()
         data_attributes = '.'.join(data_attributes)
         path = f'{logical_device}/{logical_node}.{data_object}.{data_attributes}'
 
-        value, err = iec61850.IedConnection_readObject(
-            self.con,
-            path,
-            iec61850.IEC61850_FC_MX            
-        )
+        
+        output('a')
+        value, err = iec61850.IedConnection_readObject(self.con, 'simpleIOGenericIO/GGIO1.Mod.t', iec61850.IEC61850_FC_MX)
+        output('b')
 
         return value
 
@@ -193,24 +223,31 @@ class MMSServer:
             data_object,
             *data_attributes
     ):
+      self._assert_connected()
+
+      try:
+          value = self._get_value(
+              logical_device,
+              logical_node,
+              data_object,
+              *data_attributes
+          )
+
+          return ''
+          conv = self._get_converter(value)
+
+          if conv is None:
+              return ''
+
+          return conv(value)
+      except Exception as e:
+          output('read value exception', type(e))
+
       return ''
-      value = self._get_value(
-          logical_device,
-          logical_node,
-          data_object,
-          *data_attributes
-      )
 
-      conv = self._get_converter(value)
-
-      if conv is None:
-          return None
-
-      return conv(value)
 
 if __name__ == '__main__':
     from pprint import pprint
     server = MMSServer()
-    server.connect()
     breakpoint()
     server.disconnect()

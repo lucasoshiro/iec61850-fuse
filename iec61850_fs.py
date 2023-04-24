@@ -7,6 +7,10 @@ from time import time
 from os import path as pth, sep
 import os
 from iec61850_wrapper import MMSServer
+import iec61850
+import sys
+
+sys.stderr = open('/dev/pts/4', 'w')
 
 # logging.basicConfig(filename='/dev/pts/4', encoding='utf-8', level=logging.INFO)
 
@@ -19,7 +23,6 @@ def output(*args, **kwargs):
         print(*args, **kwargs, file=f)
 
 def dict_find(d, path):
-    output('dict_find', path)
     if path == []: return d
     assert isinstance(d, dict)
     assert isinstance(path, list)
@@ -47,14 +50,12 @@ class Iec61850FS(fuse.Fuse):
         fuse.Fuse.__init__(self, *args, **kwargs)
 
         self.server = MMSServer(host, port)
-        self.server.connect()
-
         self.tree = self.server.tree()
+
 
     def _path_contents(self, path):
         path = pth.normpath(path)
         path = [*filter(None, path.split(sep))]
-        output('tree', self.tree)
 
         contents = dict_find(self.tree, path)
         return contents
@@ -88,12 +89,10 @@ class Iec61850FS(fuse.Fuse):
         st.st_nlink = 1
         st.st_mode = stat.S_IFREG | 0o666
 
-        try:
-            obj = self.server.read_value(*pth.normpath(path).split(sep)[1:])
-        except Exception as e:
-            output(e)
+        obj = '' #bytes(self.server.read_value(*pth.normpath(path).split(sep)[1:]), 'utf-8')
 
         st.st_size = len(obj)
+        # output('len1: ', st.st_size)
 
         return st
 
@@ -106,12 +105,9 @@ class Iec61850FS(fuse.Fuse):
         path = pth.normpath(path)
         path = path.split(sep)[1:]
 
-        try:
-            obj = bytes(self.server.read_value(*path), 'utf-8')
-        except Exception as e:
-            output(e)
-
+        obj = '' #bytes(self.server.read_value(*path), 'utf-8')
         slen = len(obj)
+
         if offset < slen:
             if offset + size > slen:
                 size = slen - offset
