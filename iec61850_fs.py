@@ -4,8 +4,6 @@
 import fuse
 import stat
 from time import time
-# import logging
-
 from os import path as pth, sep
 import os
 from iec61850_wrapper import MMSServer
@@ -17,7 +15,7 @@ fuse.fuse_python_api = (0, 2)
 hello_str = b'minha terra tem palmeiras onde canta o sabia\n'
 
 def output(*args, **kwargs):
-    with open('/dev/pts/1', 'w') as f:
+    with open('/dev/pts/4', 'w') as f:
         print(*args, **kwargs, file=f)
 
 def dict_find(d, path):
@@ -33,7 +31,6 @@ def dict_find(d, path):
 
 class MyStat(fuse.Stat):
    def __init__(self):
-       output('aaa')
        self.st_mode = stat.S_IFDIR | 0o755
        self.st_ino = 0
        self.st_dev = 0
@@ -44,7 +41,6 @@ class MyStat(fuse.Stat):
        self.st_atime = 0
        self.st_mtime = 0
        self.st_ctime = 0
-       output('bbb')
 
 class Iec61850FS(fuse.Fuse):
     def __init__(self, host='localhost', port=102, *args, **kwargs):
@@ -56,13 +52,8 @@ class Iec61850FS(fuse.Fuse):
         self.tree = self.server.tree()
 
     def _path_contents(self, path):
-        output('_path_contents')
-
-        output(path)
         path = pth.normpath(path)
-        output(path)
         path = [*filter(None, path.split(sep))]
-        output(path)
         output('tree', self.tree)
 
         contents = dict_find(self.tree, path)
@@ -82,10 +73,7 @@ class Iec61850FS(fuse.Fuse):
         output('getattr')
         st = MyStat()
 
-        output('ccc')
         contents = self._path_contents(path)
-
-        output('contents', contents)
 
         if contents is None:
             return -errno.ENOENT
@@ -101,13 +89,12 @@ class Iec61850FS(fuse.Fuse):
         st.st_mode = stat.S_IFREG | 0o666
 
         try:
-            obj = self.server.read_object(*pth.normpath(path).split(sep)[1:])
+            obj = self.server.read_value(*pth.normpath(path).split(sep)[1:])
         except Exception as e:
             output(e)
 
         st.st_size = len(obj)
 
-        output('xablau')
         return st
 
     # def open(self, path, flags):
@@ -116,28 +103,19 @@ class Iec61850FS(fuse.Fuse):
     #         return -errno.EACCES
 
     def read(self, path, size, offset):
-        output('AAA', path)
         path = pth.normpath(path)
-        output('BBB', path)
         path = path.split(sep)[1:]
-        output('CCC', path)
 
         try:
-            obj = bytes(self.server.read_object(*path), 'utf-8')
+            obj = bytes(self.server.read_value(*path), 'utf-8')
         except Exception as e:
             output(e)
 
-        # obj = hello_str
-
-        output('DDD', obj)
         slen = len(obj)
-        output('EEE', slen)
         if offset < slen:
             if offset + size > slen:
                 size = slen - offset
             buf = obj[offset:offset+size]
         else:
             buf = b''
-        output('FFF', str(buf))
         return buf
-

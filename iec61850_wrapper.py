@@ -8,7 +8,7 @@ Pythonic wrapper for pyiec61850
 import iec61850
 
 def output(*args, **kwargs):
-    with open('/dev/pts/1', 'w') as f:
+    with open('/dev/pts/4', 'w') as f:
         print(*args, **kwargs, file=f)
 
 class MMSServer:
@@ -101,27 +101,50 @@ class MMSServer:
 
         return self._linked_list_iterator(objs)
 
-    def data_attribute_iterator(self, logical_device, logical_node, data_object):
-        self._assert_connected()
+    def get_data_directory(
+            self,
+            logical_device,
+            logical_node,
+            data_object,
+            *data_attributes
+    ):
+        path = '/'.join([
+            logical_device,
+            '.'.join([logical_node, data_object, *data_attributes])
+        ])
+
 
         attrs, err = iec61850.IedConnection_getDataDirectory(
             self.con,
-            f'{logical_device}/{logical_node}.{data_object}'
+            path
         )
+
+        output(path, attrs, err)
+        if attrs is None:
+            return None
 
         if err != 0:
             raise ConnectionError('Data attribute error')
 
-        return self._linked_list_iterator(attrs)
+        return {
+            value: (
+                self.get_data_directory(
+                    logical_device,
+                    logical_node,
+                    data_object,
+                    *[*data_attributes, value]
+                )
+                or ...
+            )
+            for value in self._linked_list_iterator(attrs)
+        }
+
 
     def tree(self):
         return {
             device: {
                 node: {
-                    obj: {
-                        attr: ...
-                        for attr in self.data_attribute_iterator(device, node, obj)
-                    }
+                    obj: self.get_data_directory(device, node, obj)
                     for obj in self.data_objects_iterator(device, node)
                 }
                 for node in self.logical_nodes_iterator(device)
@@ -170,6 +193,7 @@ class MMSServer:
             data_object,
             *data_attributes
     ):
+      return ''
       value = self._get_value(
           logical_device,
           logical_node,
@@ -188,6 +212,5 @@ if __name__ == '__main__':
     from pprint import pprint
     server = MMSServer()
     server.connect()
-    print(server.read_value('simpleIOGenericIO', 'GGIO1', 'AnIn1', 'mag', 'f'))
-    print(server.read_value('simpleIOGenericIO', 'GGIO1', 'AnIn1', 'mag', 't'))
+    breakpoint()
     server.disconnect()
